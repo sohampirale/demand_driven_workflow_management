@@ -280,15 +280,53 @@ export default function DashboardPage() {
           ) : (
             <div className="divide-y divide-slate-200 dark:divide-slate-800">
               {workflows.map((workflow) => (
-                <div
+                <a
                   key={workflow._id}
-                  className="px-6 py-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                  href={`/workflow/${workflow._id}`}
+                  className="block hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center">
+                  <div className="px-6 py-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center">
+                          <svg
+                            className="w-5 h-5 text-white"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M13 10V3L4 14h7v7l9-11h-7z"
+                            />
+                          </svg>
+                        </div>
+                        <div>
+                          <h3 className="font-medium text-slate-900 dark:text-white">
+                            {workflow.name}
+                          </h3>
+                          {workflow.description && (
+                            <p className="text-sm text-slate-500 dark:text-slate-400">
+                              {workflow.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <span
+                          className={`px-3 py-1 text-xs font-medium rounded-full ${getStatusColor(
+                            workflow.status
+                          )}`}
+                        >
+                          {workflow.status}
+                        </span>
+                        <span className="text-sm text-slate-500 dark:text-slate-400">
+                          {new Date(workflow.createdAt).toLocaleDateString()}
+                        </span>
                         <svg
-                          className="w-5 h-5 text-white"
+                          className="w-5 h-5 text-slate-400"
                           fill="none"
                           stroke="currentColor"
                           viewBox="0 0 24 24"
@@ -297,35 +335,13 @@ export default function DashboardPage() {
                             strokeLinecap="round"
                             strokeLinejoin="round"
                             strokeWidth={2}
-                            d="M13 10V3L4 14h7v7l9-11h-7z"
+                            d="M9 5l7 7-7 7"
                           />
                         </svg>
                       </div>
-                      <div>
-                        <h3 className="font-medium text-slate-900 dark:text-white">
-                          {workflow.name}
-                        </h3>
-                        {workflow.description && (
-                          <p className="text-sm text-slate-500 dark:text-slate-400">
-                            {workflow.description}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <span
-                        className={`px-3 py-1 text-xs font-medium rounded-full ${getStatusColor(
-                          workflow.status
-                        )}`}
-                      >
-                        {workflow.status}
-                      </span>
-                      <span className="text-sm text-slate-500 dark:text-slate-400">
-                        {new Date(workflow.createdAt).toLocaleDateString()}
-                      </span>
                     </div>
                   </div>
-                </div>
+                </a>
               ))}
             </div>
           )}

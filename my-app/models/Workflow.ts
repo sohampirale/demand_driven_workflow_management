@@ -15,6 +15,19 @@ export interface IWorkflow {
     config: Record<string, unknown>;
     order: number;
   }>;
+  canvasData?: {
+    nodes?: Array<{
+      id: string;
+      type: string;
+      position: { x: number; y: number };
+      data: Record<string, unknown>;
+    }>;
+    edges?: Array<{
+      id: string;
+      source: string;
+      target: string;
+    }>;
+  };
   settings?: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
@@ -59,6 +72,26 @@ const workflowSchema = new mongoose.Schema<IWorkflow>(
         },
       ],
       default: [],
+    },
+    canvasData: {
+      nodes: [
+        {
+          id: String,
+          type: String,
+          position: {
+            x: Number,
+            y: Number,
+          },
+          data: mongoose.Schema.Types.Mixed,
+        },
+      ],
+      edges: [
+        {
+          id: String,
+          source: String,
+          target: String,
+        },
+      ],
     },
     settings: {
       type: mongoose.Schema.Types.Mixed,
