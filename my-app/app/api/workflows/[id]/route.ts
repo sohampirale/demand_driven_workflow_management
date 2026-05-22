@@ -90,7 +90,7 @@ export async function PUT(
           'canvasData.edges': edges,
         },
       },
-      { new: true }
+      { returnDocument: 'after' }
     ).lean();
 
     if (!workflow) {

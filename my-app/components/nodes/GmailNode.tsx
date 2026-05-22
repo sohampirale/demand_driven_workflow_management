@@ -1,6 +1,24 @@
 import { Handle, Position, NodeProps } from 'reactflow';
+import { useMemo } from 'react';
+
+const EMAIL_FALLBACK = 'sohampirale20504@gmail.com';
 
 export default function GmailNode({ data, selected }: NodeProps) {
+  const to = useMemo(() => {
+    if (typeof data?.to === 'string' && data.to.trim()) return data.to.trim();
+    return EMAIL_FALLBACK;
+  }, [data?.to]);
+
+  const subject = useMemo(() => {
+    if (typeof data?.subject === 'string' && data.subject.trim()) return data.subject.trim();
+    return 'Hello from DemandFlow';
+  }, [data?.subject]);
+
+  const body = useMemo(() => {
+    if (typeof data?.body === 'string' && data.body.trim()) return data.body.trim();
+    return 'Write your email body here.';
+  }, [data?.body]);
+
   return (
     <div
       className={`px-4 py-3 rounded-xl border-2 shadow-lg min-w-[200px] ${
@@ -32,6 +50,51 @@ export default function GmailNode({ data, selected }: NodeProps) {
           <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
             {data.actionType || 'Send Email'}
           </p>
+        </div>
+      </div>
+      <div className="mt-3 space-y-2 text-xs text-slate-600 dark:text-slate-300">
+        <div>
+          <label className="block text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+            To
+          </label>
+          <input
+            value={to}
+            onChange={(event) => {
+              const value = event.target.value;
+              if (data.onChange) data.onChange({ ...data, to: value });
+            }}
+            className="w-full mt-1 rounded-lg border border-red-200 dark:border-red-800 bg-white/80 dark:bg-slate-900/60 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-red-400"
+            placeholder={EMAIL_FALLBACK}
+          />
+        </div>
+        <div>
+          <label className="block text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+            Subject
+          </label>
+          <input
+            value={subject}
+            onChange={(event) => {
+              const value = event.target.value;
+              if (data.onChange) data.onChange({ ...data, subject: value });
+            }}
+            className="w-full mt-1 rounded-lg border border-red-200 dark:border-red-800 bg-white/80 dark:bg-slate-900/60 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-red-400"
+            placeholder="Email subject"
+          />
+        </div>
+        <div>
+          <label className="block text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+            Body
+          </label>
+          <textarea
+            value={body}
+            onChange={(event) => {
+              const value = event.target.value;
+              if (data.onChange) data.onChange({ ...data, body: value });
+            }}
+            rows={3}
+            className="w-full mt-1 rounded-lg border border-red-200 dark:border-red-800 bg-white/80 dark:bg-slate-900/60 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-red-400"
+            placeholder="Write email body"
+          />
         </div>
       </div>
       <Handle

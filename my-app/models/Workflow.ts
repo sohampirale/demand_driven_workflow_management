@@ -6,6 +6,7 @@ export interface IWorkflow {
   name: string;
   description?: string;
   status: 'draft' | 'active' | 'paused' | 'archived';
+  latestRunId?: mongoose.Types.ObjectId | null;
   triggers?: Array<{
     type: string;
     config: Record<string, unknown>;
@@ -33,6 +34,28 @@ export interface IWorkflow {
   updatedAt: Date;
 }
 
+const canvasNodeSchema = new mongoose.Schema(
+  {
+    id: String,
+    type: String,
+    position: {
+      x: Number,
+      y: Number,
+    },
+    data: mongoose.Schema.Types.Mixed,
+  },
+  { _id: false }
+);
+
+const canvasEdgeSchema = new mongoose.Schema(
+  {
+    id: String,
+    source: String,
+    target: String,
+  },
+  { _id: false }
+);
+
 const workflowSchema = new mongoose.Schema<IWorkflow>(
   {
     userId: {
@@ -54,6 +77,11 @@ const workflowSchema = new mongoose.Schema<IWorkflow>(
       enum: ['draft', 'active', 'paused', 'archived'],
       default: 'draft',
     },
+    latestRunId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'WorkflowRun',
+      default: null,
+    },
     triggers: {
       type: [
         {
@@ -74,24 +102,8 @@ const workflowSchema = new mongoose.Schema<IWorkflow>(
       default: [],
     },
     canvasData: {
-      nodes: [
-        {
-          id: String,
-          type: String,
-          position: {
-            x: Number,
-            y: Number,
-          },
-          data: mongoose.Schema.Types.Mixed,
-        },
-      ],
-      edges: [
-        {
-          id: String,
-          source: String,
-          target: String,
-        },
-      ],
+      nodes: [canvasNodeSchema],
+      edges: [canvasEdgeSchema],
     },
     settings: {
       type: mongoose.Schema.Types.Mixed,
@@ -102,6 +114,13 @@ const workflowSchema = new mongoose.Schema<IWorkflow>(
     timestamps: true,
   }
 );
+
+const existingWorkflowModel = mongoose.models.Workflow as mongoose.Model<IWorkflow> | undefined;
+const hasLegacyCanvasNodes = Boolean(existingWorkflowModel?.schema?.path('canvasData.nodes.0'));
+
+if (hasLegacyCanvasNodes) {
+  delete mongoose.models.Workflow;
+}
 
 const Workflow = mongoose.models.Workflow || mongoose.model<IWorkflow>('Workflow', workflowSchema);
 

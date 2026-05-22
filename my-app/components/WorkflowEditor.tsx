@@ -52,6 +52,8 @@ function FlowEditor({ workflowId, workflowName }: { workflowId: string; workflow
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const [runStatus, setRunStatus] = useState<string | null>(null);
   const [showAddPanel, setShowAddPanel] = useState(false);
 
   const onConnect = useCallback(
@@ -66,11 +68,43 @@ function FlowEditor({ workflowId, workflowName }: { workflowId: string; workflow
       id: `${type}-${Date.now()}`,
       type,
       position: { x: 250, y: 100 + nodes.length * 150 },
-      data: { label, type: actionType || 'Step' },
+      data: {
+        label,
+        type: actionType || 'Step',
+        actionType: actionType || 'Step',
+        ...(type === 'gmail'
+          ? {
+              to: 'sohampirale20504@gmail.com',
+              subject: 'Hello from DemandFlow',
+              body: 'Write your email body here.',
+            }
+          : {}),
+        onChange: (nextData: Record<string, unknown>) => {
+          setNodes((current) =>
+            current.map((node) => (node.id === newNode.id ? { ...node, data: nextData } : node))
+          );
+        },
+      },
     };
 
     setNodes((nds) => [...nds, newNode]);
     setShowAddPanel(false);
+  };
+
+  const hydrateNodes = (incomingNodes: Node[]) => {
+    setNodes(
+      incomingNodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          onChange: (nextData: Record<string, unknown>) => {
+            setNodes((current) =>
+              current.map((item) => (item.id === node.id ? { ...item, data: nextData } : item))
+            );
+          },
+        },
+      }))
+    );
   };
 
   const handleSave = async () => {
@@ -79,19 +113,24 @@ function FlowEditor({ workflowId, workflowName }: { workflowId: string; workflow
     setIsSaving(true);
     try {
       const flowData = {
-        nodes: reactFlowInstance.getNodes().map((node) => ({
-          id: node.id,
-          type: node.type,
-          position: node.position,
-          data: node.data,
-        })),
+        nodes: reactFlowInstance.getNodes().map((node) => {
+          const data = node.data && typeof node.data === 'object' ? { ...node.data } : node.data;
+          if (data && typeof data === 'object' && 'onChange' in data) {
+            delete (data as Record<string, unknown>).onChange;
+          }
+          return {
+            id: node.id,
+            type: node.type,
+            position: node.position,
+            data,
+          };
+        }),
         edges: reactFlowInstance.getEdges().map((edge) => ({
           id: edge.id,
           source: edge.source,
           target: edge.target,
         })),
       };
-
       await fetch(`/api/workflows/${workflowId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -101,6 +140,59 @@ function FlowEditor({ workflowId, workflowName }: { workflowId: string; workflow
       console.error('Failed to save workflow:', error);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleRun = async () => {
+    if (!reactFlowInstance) return;
+    setIsRunning(true);
+    setRunStatus(null);
+
+    try {
+      const flowData = {
+        nodes: reactFlowInstance.getNodes().map((node) => {
+          const data = node.data && typeof node.data === 'object' ? { ...node.data } : node.data;
+          if (data && typeof data === 'object' && 'onChange' in data) {
+            delete (data as Record<string, unknown>).onChange;
+          }
+          return {
+            id: node.id,
+            type: node.type,
+            position: node.position,
+            data,
+          };
+        }),
+        edges: reactFlowInstance.getEdges().map((edge) => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+        })),
+      };
+
+      const res = await fetch(`/api/workflows/${workflowId}/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'workflow-editor', ...flowData }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to run workflow');
+      }
+
+      const runStatusText = data.run?.status || 'started';
+      const runId = data.run?._id?.slice(-6) || '';
+      if (runStatusText === 'failed') {
+        const errorMessage = data.run?.error || data.run?.steps?.find((step: { status?: string }) => step.status === 'failed')?.error;
+        setRunStatus(`Run failed${errorMessage ? `: ${errorMessage}` : ''}${runId ? ` · ${runId}` : ''}`);
+      } else {
+        setRunStatus(`Run ${runStatusText}${runId ? ` · ${runId}` : ''}`.trim());
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Run failed';
+      setRunStatus(message);
+    } finally {
+      setIsRunning(false);
     }
   };
 
@@ -129,6 +221,40 @@ function FlowEditor({ workflowId, workflowName }: { workflowId: string; workflow
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [deleteSelectedNode]);
+
+  useEffect(() => {
+    const loadWorkflow = async () => {
+      try {
+        const res = await fetch(`/api/workflows/${workflowId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const savedNodes = data.workflow?.canvasData?.nodes || [];
+        const savedEdges = data.workflow?.canvasData?.edges || [];
+        if (savedNodes.length) {
+          const nodesWithDefaults = savedNodes.map((node: Node) => {
+            if (node.type === 'gmail') {
+              return {
+                ...node,
+                data: {
+                  to: 'sohampirale20504@gmail.com',
+                  subject: 'Hello from DemandFlow',
+                  body: 'Write your email body here.',
+                  ...node.data,
+                },
+              };
+            }
+            return node;
+          });
+          hydrateNodes(nodesWithDefaults);
+          setEdges(savedEdges);
+        }
+      } catch (error) {
+        console.error('Failed to load workflow canvas:', error);
+      }
+    };
+
+    loadWorkflow();
+  }, [workflowId]);
 
   return (
     <div className="h-full flex">
@@ -387,13 +513,25 @@ function FlowEditor({ workflowId, workflowName }: { workflowId: string; workflow
           </div>
         </div>
 
-        <button
-          onClick={handleSave}
-          disabled={isSaving}
-          className="mt-4 w-full px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-semibold rounded-xl hover:from-emerald-600 hover:to-teal-700 transition-all disabled:opacity-50"
-        >
-          {isSaving ? 'Saving...' : 'Save Workflow'}
-        </button>
+        <div className="mt-4 space-y-2">
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="w-full px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-semibold rounded-xl hover:from-emerald-600 hover:to-teal-700 transition-all disabled:opacity-50"
+          >
+            {isSaving ? 'Saving...' : 'Save Workflow'}
+          </button>
+          <button
+            onClick={handleRun}
+            disabled={isRunning}
+            className="w-full px-4 py-3 bg-gradient-to-r from-pink-500 to-rose-600 text-white font-semibold rounded-xl hover:from-pink-600 hover:to-rose-700 transition-all disabled:opacity-50"
+          >
+            {isRunning ? 'Running...' : 'Run Workflow'}
+          </button>
+          {runStatus && (
+            <p className="text-xs text-slate-500 dark:text-slate-400 text-center">{runStatus}</p>
+          )}
+        </div>
 
         <a
           href="/dashboard"
