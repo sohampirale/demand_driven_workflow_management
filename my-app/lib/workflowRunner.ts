@@ -174,7 +174,7 @@ export async function runWorkflow({ workflowId, userId, trigger, inputs, overrid
   const outputs: Record<string, unknown> = {};
 
   for (const node of orderedNodes) {
-    const stepIndex = run.steps.findIndex((step) => step.id === node.id);
+    const stepIndex = run.steps.findIndex((step: { id?: string }) => step.id === node.id);
     if (stepIndex < 0) continue;
     run.steps[stepIndex].status = 'running';
     run.steps[stepIndex].startedAt = new Date();
