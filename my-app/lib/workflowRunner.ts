@@ -33,6 +33,13 @@ interface CanvasEdge {
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL || '';
 
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://140.245.228.27:8080';
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'apikey-ropmitra-prod-12345';
+const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE || 'soham-pirale';
+
+const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
+const DEFAULT_GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
+
 function requireResendConfig() {
   if (!RESEND_API_KEY) {
     throw new Error('Missing RESEND_API_KEY');
@@ -93,20 +100,8 @@ function normalizeString(value: unknown) {
   return String(value).trim();
 }
 
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://140.245.228.27:8080';
-const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'apikey-ropmitra-prod-12345';
-const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE || 'soham-pirale';
-
-async function executeWhatsAppNode(node: CanvasNode) {
-  const data = node.data || {};
-  const rawPhone = normalizeString(data.phone || data.to) || '918208363244';
-  const digitsOnly = rawPhone.replace(/\D/g, '');
-  const message = normalizeString(data.message || data.text || data.body) || 'Hello from DemandFlow WhatsApp!';
-
-  if (!digitsOnly) {
-    throw new Error('WhatsApp node requires a valid recipient phone number');
-  }
-
+async function sendWhatsAppDirect(phone: string, message: string) {
+  const digitsOnly = phone.replace(/\D/g, '');
   const baseUrl = EVOLUTION_API_URL.replace(/\/+$/, '');
   const endpoint = `${baseUrl}/message/sendText/${EVOLUTION_INSTANCE}`;
   const response = await fetch(endpoint, {
@@ -126,27 +121,11 @@ async function executeWhatsAppNode(node: CanvasNode) {
     throw new Error(`Evolution API error (${response.status}): ${errorBody || response.statusText}`);
   }
 
-  const result = await response.json();
-  return {
-    provider: 'evolution-api',
-    instance: EVOLUTION_INSTANCE,
-    to: digitsOnly,
-    messageId: result?.key?.id || result?.messageId || result?.id,
-    response: result,
-  };
+  return await response.json();
 }
 
-async function executeGmailNode(node: CanvasNode) {
+async function sendEmailDirect(to: string, subject: string, body: string) {
   requireResendConfig();
-  const data = node.data || {};
-  const to = normalizeString(data.to);
-  const subject = normalizeString(data.subject);
-  const body = normalizeString(data.body || data.message);
-
-  if (!to) {
-    throw new Error('Gmail node requires a recipient');
-  }
-
   const resend = new Resend(RESEND_API_KEY);
   const { data: sent, error } = await resend.emails.send({
     from: RESEND_FROM_EMAIL,
@@ -159,11 +138,270 @@ async function executeGmailNode(node: CanvasNode) {
     throw new Error(error.message || 'Failed to send email');
   }
 
+  return { id: sent?.id, to, subject };
+}
+
+const AVAILABLE_TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'send_whatsapp',
+      description: 'Send an automated WhatsApp text message to a phone number via Evolution API',
+      parameters: {
+        type: 'object',
+        properties: {
+          phone: {
+            type: 'string',
+            description: 'Recipient phone number with country code, e.g. 918208363244',
+          },
+          message: {
+            type: 'string',
+            description: 'The exact WhatsApp message body text to send',
+          },
+        },
+        required: ['phone', 'message'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'send_email',
+      description: 'Send an email notification via Resend',
+      parameters: {
+        type: 'object',
+        properties: {
+          to: {
+            type: 'string',
+            description: 'Recipient email address',
+          },
+          subject: {
+            type: 'string',
+            description: 'Email subject line',
+          },
+          body: {
+            type: 'string',
+            description: 'Email body text content',
+          },
+        },
+        required: ['to', 'subject', 'body'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_current_time',
+      description: 'Get the current system date, time, and timezone information',
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+    },
+  },
+];
+
+async function executeAINode(node: CanvasNode, incomingMessage?: string) {
+  if (!GROQ_API_KEY) {
+    throw new Error('Missing GROQ_API_KEY in environment variables');
+  }
+
+  const data = node.data || {};
+  const systemPrompt =
+    normalizeString(data.systemPrompt) ||
+    'You are an intelligent assistant in a demand-driven workflow management system. Help the user concisely, automate requested actions using available tools when appropriate.';
+
+  const userMessage =
+    normalizeString(incomingMessage) ||
+    normalizeString(data.userPrompt) ||
+    'Hello! Please process this workflow.';
+
+  const model = normalizeString(data.model) || DEFAULT_GROQ_MODEL;
+  const enabledTools: string[] = Array.isArray(data.tools)
+    ? (data.tools as string[])
+    : ['send_whatsapp', 'send_email', 'get_current_time'];
+
+  const activeTools = AVAILABLE_TOOLS.filter((t) => enabledTools.includes(t.function.name));
+
+  interface ChatMessage {
+    role: string;
+    content?: string | null;
+    tool_calls?: any[];
+    tool_call_id?: string;
+  }
+
+  const messages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userMessage },
+  ];
+
+  const payload: Record<string, unknown> = {
+    model,
+    messages,
+    max_tokens: 512,
+  };
+
+  if (activeTools.length > 0) {
+    payload.tools = activeTools;
+  }
+
+  const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${GROQ_API_KEY}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!groqRes.ok) {
+    const errorBody = await groqRes.text();
+    throw new Error(`Groq API error (${groqRes.status}): ${errorBody}`);
+  }
+
+  const completion = await groqRes.json();
+  const choice = completion.choices?.[0]?.message;
+  let assistantText = choice?.content || '';
+  const toolCalls = choice?.tool_calls || [];
+  const executedToolResults: Array<{
+    id: string;
+    name: string;
+    args: Record<string, unknown>;
+    result: Record<string, unknown>;
+  }> = [];
+
+  if (toolCalls.length > 0) {
+    messages.push(choice);
+
+    for (const toolCall of toolCalls) {
+      const toolName = toolCall.function?.name;
+      let args: Record<string, unknown> = {};
+      try {
+        args = JSON.parse(toolCall.function?.arguments || '{}');
+      } catch {}
+
+      let toolResult: Record<string, unknown>;
+      try {
+        if (toolName === 'send_whatsapp') {
+          const phone = normalizeString(args.phone) || '918208363244';
+          const msg = normalizeString(args.message) || 'Hello from AI Agent';
+          const sent = await sendWhatsAppDirect(phone, msg);
+          toolResult = { success: true, phone, message: msg, result: sent };
+        } else if (toolName === 'send_email') {
+          const to = normalizeString(args.to) || 'sohampirale20504@gmail.com';
+          const subject = normalizeString(args.subject) || 'DemandFlow notification';
+          const body = normalizeString(args.body) || 'Hello from AI Agent';
+          const sent = await sendEmailDirect(to, subject, body);
+          toolResult = { success: true, to, subject, result: sent };
+        } else if (toolName === 'get_current_time') {
+          toolResult = { iso: new Date().toISOString(), local: new Date().toLocaleString() };
+        } else {
+          toolResult = { error: `Unknown tool: ${toolName}` };
+        }
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : 'Tool execution failed';
+        toolResult = { error: errorMsg };
+      }
+
+      executedToolResults.push({
+        id: toolCall.id,
+        name: toolName,
+        args,
+        result: toolResult,
+      });
+
+      messages.push({
+        role: 'tool',
+        tool_call_id: toolCall.id,
+        content: JSON.stringify(toolResult),
+      });
+    }
+
+    try {
+      const secondRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${GROQ_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          max_tokens: 512,
+        }),
+      });
+      if (secondRes.ok) {
+        const secondCompletion = await secondRes.json();
+        assistantText = secondCompletion.choices?.[0]?.message?.content || assistantText;
+      }
+    } catch {}
+  }
+
+  return {
+    provider: 'groq',
+    model,
+    text: assistantText,
+    reply: assistantText,
+    userMessage,
+    toolCalls: executedToolResults,
+  };
+}
+
+async function executeWhatsAppNode(node: CanvasNode, incomingMessage?: string) {
+  const data = node.data || {};
+  const rawPhone = normalizeString(data.phone || data.to) || '918208363244';
+  const digitsOnly = rawPhone.replace(/\D/g, '');
+
+  let message = normalizeString(data.message || data.text || data.body);
+  if ((!message || message === 'Hello from DemandFlow WhatsApp!') && incomingMessage) {
+    message = incomingMessage;
+  }
+  if (!message) {
+    message = 'Hello from DemandFlow WhatsApp!';
+  }
+
+  if (!digitsOnly) {
+    throw new Error('WhatsApp node requires a valid recipient phone number');
+  }
+
+  const result = await sendWhatsAppDirect(digitsOnly, message);
+
+  return {
+    provider: 'evolution-api',
+    instance: EVOLUTION_INSTANCE,
+    to: digitsOnly,
+    message,
+    messageId: result?.key?.id || result?.messageId || result?.id,
+    response: result,
+  };
+}
+
+async function executeGmailNode(node: CanvasNode, incomingMessage?: string) {
+  requireResendConfig();
+  const data = node.data || {};
+  const to = normalizeString(data.to);
+  const subject = normalizeString(data.subject);
+
+  let body = normalizeString(data.body || data.message);
+  if ((!body || body === 'Write your email body here.') && incomingMessage) {
+    body = incomingMessage;
+  }
+  if (!body) {
+    body = 'Hello from DemandFlow';
+  }
+
+  if (!to) {
+    throw new Error('Gmail node requires a recipient');
+  }
+
+  const sent = await sendEmailDirect(to, subject || 'Workflow email', body);
+
   return {
     provider: 'resend',
-    messageId: sent?.id,
+    messageId: sent.id,
     to,
     subject: subject || 'Workflow email',
+    body,
   };
 }
 
@@ -223,14 +461,41 @@ export async function runWorkflow({ workflowId, userId, trigger, inputs, overrid
     run.steps[stepIndex].startedAt = new Date();
     await run.save();
 
+    // Resolve incoming message from top-down edges
+    const incomingEdges = edges.filter((e) => e.target === node.id);
+    let incomingMessage = '';
+
+    for (const edge of incomingEdges) {
+      const sourceOutput = outputs[edge.source] as Record<string, unknown> | undefined;
+      if (sourceOutput?.text && typeof sourceOutput.text === 'string') {
+        incomingMessage = sourceOutput.text;
+        break;
+      }
+      if (sourceOutput?.reply && typeof sourceOutput.reply === 'string') {
+        incomingMessage = sourceOutput.reply;
+        break;
+      }
+      const sourceNode = nodes.find((n) => n.id === edge.source);
+      if (sourceNode?.type === 'chatTrigger' || sourceNode?.type === 'trigger') {
+        incomingMessage = normalizeString(inputs?.message || inputs?.text || trigger.source);
+        break;
+      }
+    }
+
+    if (!incomingMessage && inputs?.message) {
+      incomingMessage = normalizeString(inputs.message);
+    }
+
     try {
       let output: Record<string, unknown> | undefined;
       if (node.type === 'gmail') {
-        output = await executeGmailNode(node);
+        output = await executeGmailNode(node, incomingMessage);
       } else if (node.type === 'whatsapp') {
-        output = await executeWhatsAppNode(node);
+        output = await executeWhatsAppNode(node, incomingMessage);
+      } else if (node.type === 'ai') {
+        output = await executeAINode(node, incomingMessage);
       } else {
-        output = { skipped: true };
+        output = { skipped: true, incomingMessage };
       }
 
       run.steps[stepIndex].status = 'success';

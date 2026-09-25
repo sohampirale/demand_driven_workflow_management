@@ -19,14 +19,21 @@ export async function POST(
     }
 
     const body = await request.json().catch(() => ({}));
+    const message = body.message || body.inputs?.message || '';
+    const triggerType = body.trigger?.type || (body.source === 'chat' ? 'chat' : 'manual');
+    const triggerSource = body.trigger?.source || body.source || 'ui';
+
     const run = await runWorkflow({
       workflowId: id,
       userId: user._id,
       trigger: {
-        type: 'manual',
-        source: body.source || 'ui',
+        type: triggerType,
+        source: triggerSource,
       },
-      inputs: body.inputs || {},
+      inputs: {
+        ...(body.inputs || {}),
+        ...(message ? { message } : {}),
+      },
       overrideCanvas: body.nodes && body.edges ? { nodes: body.nodes, edges: body.edges } : undefined,
     });
 
