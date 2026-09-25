@@ -345,10 +345,18 @@ function FlowEditor({ workflowId, workflowName }: { workflowId: string; workflow
       }
 
       if (!replyText) {
-        replyText =
-          run?.status === 'success'
-            ? 'Workflow completed successfully.'
-            : `Workflow finished with status: ${run?.status || 'unknown'}`;
+        if (run?.status === 'failed') {
+          const errMsg =
+            run?.error ||
+            run?.steps?.find((step: { status?: string }) => step.status === 'failed')?.error ||
+            'Workflow execution failed';
+          replyText = `❌ Workflow failed: ${errMsg}`;
+        } else {
+          replyText =
+            run?.status === 'success'
+              ? 'Workflow completed successfully.'
+              : `Workflow finished with status: ${run?.status || 'unknown'}`;
+        }
       }
 
       const assistantMessageItem: ChatMessageItem = {
