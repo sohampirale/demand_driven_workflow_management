@@ -24,12 +24,14 @@ import TelegramNode from '@/components/nodes/TelegramNode';
 import TelegramWaitNode from '@/components/nodes/TelegramWaitNode';
 import WebhookNode from '@/components/nodes/WebhookNode';
 import ButtonNode from '@/components/nodes/ButtonNode';
+import WhatsAppNode from '@/components/nodes/WhatsAppNode';
 
 const nodeTypes = {
   trigger: TriggerNode,
   action: ActionNode,
   ai: AINode,
   gmail: GmailNode,
+  whatsapp: WhatsAppNode,
   telegram: TelegramNode,
   telegramWait: TelegramWaitNode,
   webhook: WebhookNode,
@@ -77,6 +79,12 @@ function FlowEditor({ workflowId, workflowName }: { workflowId: string; workflow
               to: 'sohampirale20504@gmail.com',
               subject: 'Hello from DemandFlow',
               body: 'Write your email body here.',
+            }
+          : {}),
+        ...(type === 'whatsapp'
+          ? {
+              phone: '918208363244',
+              message: 'Hello from DemandFlow WhatsApp!',
             }
           : {}),
         onChange: (nextData: Record<string, unknown>) => {
@@ -239,6 +247,16 @@ function FlowEditor({ workflowId, workflowName }: { workflowId: string; workflow
                   to: 'sohampirale20504@gmail.com',
                   subject: 'Hello from DemandFlow',
                   body: 'Write your email body here.',
+                  ...node.data,
+                },
+              };
+            }
+            if (node.type === 'whatsapp') {
+              return {
+                ...node,
+                data: {
+                  phone: '918208363244',
+                  message: 'Hello from DemandFlow WhatsApp!',
                   ...node.data,
                 },
               };
@@ -414,6 +432,33 @@ function FlowEditor({ workflowId, workflowName }: { workflowId: string; workflow
                 <div>
                   <p className="text-sm font-medium text-slate-900 dark:text-white">Gmail</p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">Send email</p>
+                </div>
+              </div>
+            </button>
+
+            <button
+              onClick={() => addNode('whatsapp', 'Send WhatsApp', 'WhatsApp')}
+              className="w-full p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors text-left"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
+                  <svg
+                    className="w-4 h-4 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-900 dark:text-white">WhatsApp</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Send via Evolution API</p>
                 </div>
               </div>
             </button>

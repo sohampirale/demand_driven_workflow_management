@@ -84,13 +84,56 @@ function buildExecutionOrder(nodes: CanvasNode[], edges: CanvasEdge[]) {
 
 function isActionNode(node: CanvasNode) {
   const type = node.type || '';
-  return ['gmail', 'action', 'ai', 'telegram', 'telegramWait'].includes(type);
+  return ['gmail', 'action', 'ai', 'telegram', 'telegramWait', 'whatsapp'].includes(type);
 }
 
 function normalizeString(value: unknown) {
   if (typeof value === 'string') return value.trim();
   if (value == null) return '';
   return String(value).trim();
+}
+
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://140.245.228.27:8080';
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'apikey-ropmitra-prod-12345';
+const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE || 'soham-pirale';
+
+async function executeWhatsAppNode(node: CanvasNode) {
+  const data = node.data || {};
+  const rawPhone = normalizeString(data.phone || data.to) || '918208363244';
+  const digitsOnly = rawPhone.replace(/\D/g, '');
+  const message = normalizeString(data.message || data.text || data.body) || 'Hello from DemandFlow WhatsApp!';
+
+  if (!digitsOnly) {
+    throw new Error('WhatsApp node requires a valid recipient phone number');
+  }
+
+  const baseUrl = EVOLUTION_API_URL.replace(/\/+$/, '');
+  const endpoint = `${baseUrl}/message/sendText/${EVOLUTION_INSTANCE}`;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: EVOLUTION_API_KEY,
+    },
+    body: JSON.stringify({
+      number: digitsOnly,
+      text: message,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Evolution API error (${response.status}): ${errorBody || response.statusText}`);
+  }
+
+  const result = await response.json();
+  return {
+    provider: 'evolution-api',
+    instance: EVOLUTION_INSTANCE,
+    to: digitsOnly,
+    messageId: result?.key?.id || result?.messageId || result?.id,
+    response: result,
+  };
 }
 
 async function executeGmailNode(node: CanvasNode) {
@@ -184,6 +227,8 @@ export async function runWorkflow({ workflowId, userId, trigger, inputs, overrid
       let output: Record<string, unknown> | undefined;
       if (node.type === 'gmail') {
         output = await executeGmailNode(node);
+      } else if (node.type === 'whatsapp') {
+        output = await executeWhatsAppNode(node);
       } else {
         output = { skipped: true };
       }
